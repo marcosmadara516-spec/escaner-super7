@@ -136,6 +136,13 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
 
 .leyendo{position:fixed;inset:0;z-index:45;background:rgb(0 0 0 / .55);display:grid;place-items:center}
 .leyendo div{background:var(--surface);color:var(--fg);padding:16px 22px;border-radius:12px;font-weight:700}
+.hoja-op{position:fixed;inset:0;z-index:30;background:rgb(0 0 0 / .45);display:flex;align-items:flex-end;justify-content:center}
+.hoja-in{background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:10px}
+.hoja-in b{font-family:var(--f-display);font-size:1.25rem}
+.fe-prev{background:#fff;border:1px solid var(--line);border-radius:14px;aspect-ratio:1/1;max-width:100%;display:grid;place-items:center;overflow:hidden}
+.fe-prev img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.fe-sw{display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.fe-sw input{width:22px;height:22px;margin-top:2px;flex:none;accent-color:var(--accent)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;font-size:.9rem;z-index:40;max-width:calc(100% - 32px);text-align:center}
 .cargando{padding:40px;text-align:center;color:var(--muted)}
 @media (prefers-reduced-motion:no-preference){.fab{transition:transform .12s}.fab:active{transform:scale(.94)}}
@@ -162,7 +169,7 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
     <button class="chip" data-f="atendidos" aria-pressed="false">Atendidos</button>
   </div>
   <div id="lista" class="lista"><div class="cargando">Cargando…</div></div>
-  <p class="muted" style="text-align:center;font-size:.8rem;margin:20px 0 0">Escáner Super 7 · Versión 1</p>
+  <p class="muted" style="text-align:center;font-size:.8rem;margin:20px 0 0">Escáner Super 7 · Versión 2</p>
 </div>
 
 <button class="fab" id="fab" type="button" aria-label="Escanear código de barras">
@@ -210,6 +217,28 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
   <div class="pant-b"><div class="in gut" id="reg-in"></div></div>
   <input id="file-foto" type="file" accept="image/*" hidden>
 </section>
+<input id="file-foto-cam" type="file" accept="image/*" capture="environment" hidden>
+<!-- Elegir origen de la foto -->
+<div class="hoja-op" id="p-fop" hidden role="dialog" aria-label="Foto del producto">
+  <div class="hoja-in">
+    <b>Foto del producto</b>
+    <button class="btn big" id="fop-cam" type="button">📷 Tomar foto</button>
+    <button class="btn big" id="fop-gal" type="button">🖼️ Elegir de la galería</button>
+    <button class="link" id="fop-x" type="button" style="text-align:center">Cancelar</button>
+  </div>
+</div>
+<!-- Vista previa con quitar fondo -->
+<section class="pant" id="p-fedit" hidden aria-labelledby="p-fedit-t">
+  <div class="pant-h"><b id="p-fedit-t">Foto del producto</b><button class="btn" id="fe-x" type="button">Cancelar</button></div>
+  <div class="pant-b"><div class="in gut">
+    <div class="fe-prev"><img id="fe-img" alt="Vista previa de la foto"></div>
+    <label class="fe-sw"><input type="checkbox" id="fe-sw" checked> <span><b>Quitar fondo</b><br><span class="mini">Deja el producto sobre fondo blanco. Funciona mejor con fondo liso.</span></span></label>
+    <div class="mini" id="fe-est"></div>
+    <button class="btn pri big" id="fe-ok" type="button">Usar esta foto</button>
+    <button class="btn big" id="fe-otra" type="button">📷 Tomar otra</button>
+  </div></div>
+</section>
+
 
 <!-- Lista de opciones -->
 <section class="pant" id="p-opc" hidden aria-labelledby="p-opc-t">
@@ -449,9 +478,78 @@ $("reg-in").addEventListener("click",async e=>{const R=S.reg;const t=e.target.cl
     if(v===NUEVO){R.nuevo=true;R.producto="";R.presentacion="";pintarRegistro();setTimeout(()=>$("r-nom")&&$("r-nom").focus(),50)}
     else if(v!=null&&(v!==R.producto||R.nuevo)){R.nuevo=false;R.producto=v;R.presentacion="";pintarRegistro()}}
   else if(t.id==="r-pres"){const v=await elegir(R.producto,[...presDe(R.categoria,R.producto)].sort((a,b)=>a.localeCompare(b,"es")),R.presentacion);if(v!=null){R.presentacion=v;pintarRegistro()}}
-  else if(t.id==="r-foto"){$("file-foto").click()}
+  else if(t.id==="r-foto"){opcionesFoto()}
   else if(t.id==="r-guardar"){guardar()}});
-$("file-foto").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;try{S.reg.fotoNueva=await miniatura(f);pintarRegistro()}catch(err){toast("No se pudo usar la foto")}};
+/* ---------- foto del producto: cámara o galería, con quitar fondo ---------- */
+// Quita el fondo liso que toca los bordes de la foto y deja el producto recortado sobre blanco.
+function quitarFondo(img){
+  const W0=img.naturalWidth,H0=img.naturalHeight;const s=Math.min(1,420/Math.max(W0,H0));
+  const w=Math.max(8,Math.round(W0*s)),h=Math.max(8,Math.round(H0*s)),N=w*h;
+  const c=document.createElement("canvas");c.width=w;c.height=h;const g=c.getContext("2d",{willReadFrequently:true});
+  g.imageSmoothingQuality="high";g.drawImage(img,0,0,w,h);
+  const d=g.getImageData(0,0,w,h).data;
+  const dist=(a,b)=>{const dr=d[a]-d[b],dg=d[a+1]-d[b+1],db=d[a+2]-d[b+2];return Math.sqrt(dr*dr*.8+dg*dg+db*db*.7)};
+  // color promedio y variación del borde
+  const borde=[];for(let x=0;x<w;x++){borde.push(x,(h-1)*w+x)}for(let y=1;y<h-1;y++){borde.push(y*w,y*w+w-1)}
+  let mr=0,mg=0,mb=0;borde.forEach(p=>{mr+=d[p*4];mg+=d[p*4+1];mb+=d[p*4+2]});mr/=borde.length;mg/=borde.length;mb/=borde.length;
+  const dm=p=>{const dr=d[p*4]-mr,dg=d[p*4+1]-mg,db=d[p*4+2]-mb;return Math.sqrt(dr*dr*.8+dg*dg+db*db*.7)};
+  const ds=borde.map(dm).sort((a,b)=>a-b);const med=ds[Math.floor(ds.length*.5)]||0,p85=ds[Math.floor(ds.length*.85)]||0;
+  const TG=Math.min(95,Math.max(30,p85*1.5+16)),TL=Math.min(24,Math.max(8,med*.5+7));
+  const bg=new Uint8Array(N),q=new Int32Array(N);let qh=0,qt=0;
+  borde.forEach(p=>{if(!bg[p]&&dm(p)<TG){bg[p]=1;q[qt++]=p}});
+  while(qh<qt){const p=q[qh++],x=p%w,y=(p/w)|0;
+    for(const n of [x>0?p-1:-1,x<w-1?p+1:-1,y>0?p-w:-1,y<h-1?p+w:-1]){
+      if(n<0||bg[n])continue;if(dist(p*4,n*4)<TL&&dm(n)<TG*1.15){bg[n]=1;q[qt++]=n}}}
+  // quedarse con la pieza más grande del producto
+  const lab=new Int32Array(N);let mejor=0,mejorN=0,id=0;
+  for(let i=0;i<N;i++){if(bg[i]||lab[i])continue;id++;let cnt=0;qh=qt=0;q[qt++]=i;lab[i]=id;
+    while(qh<qt){const p=q[qh++],x=p%w,y=(p/w)|0;cnt++;
+      for(const n of [x>0?p-1:-1,x<w-1?p+1:-1,y>0?p-w:-1,y<h-1?p+w:-1]){if(n>=0&&!bg[n]&&!lab[n]){lab[n]=id;q[qt++]=n}}}
+    if(cnt>mejorN){mejorN=cnt;mejor=id}}
+  // si el fondo no rodea al producto (fondo con muchas cosas), mejor no recortar
+  let bb=0;borde.forEach(p=>{if(bg[p])bb++});
+  const fr=mejorN/N;if(!mejor||fr<.04||fr>.85||bb/borde.length<.6)return null;
+  // máscara suavizada y recuadro del producto
+  const a=new Float32Array(N);let x0=w,y0=h,x1=0,y1=0;
+  for(let i=0;i<N;i++)if(lab[i]===mejor){a[i]=1;const x=i%w,y=(i/w)|0;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  const mc=document.createElement("canvas");mc.width=w;mc.height=h;const mg2=mc.getContext("2d");const md=mg2.createImageData(w,h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let sum=0,k=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const xx=x+dx,yy=y+dy;if(xx>=0&&yy>=0&&xx<w&&yy<h){sum+=a[yy*w+xx];k++}}
+    const i=(y*w+x)*4;md.data[i]=md.data[i+1]=md.data[i+2]=0;md.data[i+3]=Math.round(255*sum/k)}
+  mg2.putImageData(md,0,0);
+  const pad=Math.round(Math.max(x1-x0,y1-y0)*.08)+2;x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);x1=Math.min(w-1,x1+pad);y1=Math.min(h-1,y1+pad);
+  const cw=x1-x0+1,ch=y1-y0+1,lado=Math.max(cw,ch);const OUT=360;const k2=OUT/lado;
+  const o=document.createElement("canvas");o.width=o.height=OUT;const og=o.getContext("2d");
+  const ox=(OUT-cw*k2)/2,oy=(OUT-ch*k2)/2;
+  og.drawImage(img,x0/s,y0/s,cw/s,ch/s,ox,oy,cw*k2,ch*k2);
+  og.globalCompositeOperation="destination-in";og.imageSmoothingEnabled=true;og.drawImage(mc,x0,y0,cw,ch,ox,oy,cw*k2,ch*k2);
+  og.globalCompositeOperation="destination-over";og.fillStyle="#fff";og.fillRect(0,0,OUT,OUT);
+  return comprimir(o)}
+function comprimir(c){let q=.85,u=c.toDataURL("image/jpeg",q);while(u.length>40000&&q>.35){q-=.08;u=c.toDataURL("image/jpeg",q)}return u}
+function fotoOriginal(img){const max=320;const s=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
+  const c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*s);c.height=Math.round(img.naturalHeight*s);const g=c.getContext("2d");
+  g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);return comprimir(c)}
+const FE={orig:"",sinFondo:null,usarSin:true};
+function abrirEditorFoto(img,desdeCamara){
+  FE.orig=fotoOriginal(img);FE.sinFondo=undefined;FE.usarSin=true;$("fe-sw").checked=true;$("fe-sw").disabled=true;
+  $("fe-img").src=FE.orig;$("fe-est").textContent="Quitando el fondo…";$("fe-otra").textContent=desdeCamara?"📷 Tomar otra":"🖼️ Elegir otra";$("fe-otra").dataset.cam=desdeCamara?"1":"";
+  abrir("p-fedit");
+  setTimeout(()=>{let r=null;try{r=quitarFondo(img)}catch(e){r=null}FE.sinFondo=r;$("fe-sw").disabled=!r;
+    if(r){$("fe-est").textContent="Listo. Si no se ve bien, apaga “Quitar fondo”.";}else{FE.usarSin=false;$("fe-sw").checked=false;$("fe-est").textContent="No pude separar el producto del fondo. Prueba con el producto sobre un fondo liso, o usa la foto así."}
+    pintarFE()},60)}
+function pintarFE(){$("fe-img").src=FE.usarSin&&FE.sinFondo?FE.sinFondo:FE.orig}
+$("fe-sw").onchange=e=>{FE.usarSin=e.target.checked;pintarFE()};
+$("fe-x").onclick=()=>cerrar("p-fedit");
+$("fe-ok").onclick=()=>{if(!S.reg)return cerrar("p-fedit");S.reg.fotoNueva=FE.usarSin&&FE.sinFondo?FE.sinFondo:FE.orig;cerrar("p-fedit");pintarRegistro()};
+$("fe-otra").onclick=()=>{cerrar("p-fedit");$($("fe-otra").dataset.cam?"file-foto-cam":"file-foto").click()};
+function opcionesFoto(){abrir("p-fop")}
+$("fop-cam").onclick=()=>{cerrar("p-fop");$("file-foto-cam").click()};
+$("fop-gal").onclick=()=>{cerrar("p-fop");$("file-foto").click()};
+$("fop-x").onclick=()=>cerrar("p-fop");
+$("p-fop").addEventListener("click",e=>{if(e.target.id==="p-fop")cerrar("p-fop")});
+async function fotoElegida(e,desdeCamara){const f=e.target.files[0];e.target.value="";if(!f)return;
+  try{const img=await cargarImagen(f);abrirEditorFoto(img,desdeCamara)}catch(err){toast("No se pudo abrir la foto")}}
+$("file-foto").onchange=e=>fotoElegida(e,false);
+$("file-foto-cam").onchange=e=>fotoElegida(e,true);
 $("reg-x").onclick=()=>{S.reg=null;cerrar("p-reg")};
 async function guardar(){
   const R=S.reg;const err=$("r-err");
