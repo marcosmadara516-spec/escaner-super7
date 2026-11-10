@@ -226,7 +226,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 /* ===== CONFIGURACIÓN: pega aquí la URL de tu Apps Script (termina en /exec) y la misma clave de Escaner.gs ===== */
-const API_URL = "https://script.google.com/macros/s/AKfycbwevETLe-R2Jhpo4nlEproQ3t0srwEfUnX8Mk0CqAXtUd63ZGYXiy3z1a5hPRuP9lI-/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyreE5z1JjjR_uWP8wvJvTAjzWlbRTI5xLvkjyIoped_z5077LetfIjMyXGe18n6H4/exec";
 const CLAVE   = "Super7";
 /* =============================================================================================================== */
 async function api(fn,...a){
